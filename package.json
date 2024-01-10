@@ -2,7 +2,8 @@
   "scripts": {
     "build": "npx tsc -b",
     "dev": "npx tsc -b -w",
-    "start": "node --enable-source-maps lib/index.js"
+    "start": "node --enable-source-maps lib/index.js",
+    "test": "npm run build && npm run start"
   },
   "devDependencies": {
     "@tsconfig/node20": "^20.1.2",
