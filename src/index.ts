@@ -43,7 +43,9 @@ async function run(): Promise<void> {
           // Write each line to the CSV file.
           await appendFile(
             `out/${region}.csv`,
-            `${quote(id)},${quote(speaker)},${quote(text)}\n`
+            `${escapeCSVField(id)},${escapeCSVField(speaker)},${escapeCSVField(
+              text
+            )}\n`
           );
         }
       }
@@ -52,18 +54,19 @@ async function run(): Promise<void> {
 }
 
 /**
- * Returns a CSV-quoted version of the provided text to allow for double quotes
- * and line breaks to exist in a CSV field.
+ * Returns an escaped version of the provided text to allow for double quotes,
+ * commas, and line breaks to exist in a CSV field.
  *
- * The text is wrapped in double-quotes, and any pre-existing double-quotes are
- * escaped as double-double-quotes. For example, the text `Who are you calling
- * "buster", buster?` is converted to `"Who are you calling ""buster"",
- * buster?"`
- * @param text The text to quote.
- * @returns The CSV-quoted text.
+ * If the text contains double-quotes, commas, or line breaks, the text is
+ * wrapped in double-quotes, and any pre-existing double-quotes are escaped as
+ * double-double-quotes. For example, the text `Who are you calling "buster",
+ * buster?` is converted to `"Who are you calling ""buster"", buster?"`.
+ * Otherwise, the text is returned as-is.
+ * @param text The text to escape.
+ * @returns The escaped text.
  */
-function quote(text: string): string {
-  return `"${text.replaceAll('"', '""')}"`;
+function escapeCSVField(text: string): string {
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 // Process the Unreal Engine files and write an errors to the console.
