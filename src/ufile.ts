@@ -122,8 +122,8 @@ export class UFile {
       return value.replace(/\0$/, "");
     } else {
       // A negative length means the string is encoded as UTF-16 LE and the
-      // absolute value of the length is number of UTF-16 characters, which half
-      // of the byte length.
+      // absolute value of the length is the number of UTF-16 characters, which
+      // half of the byte length.
       const byteLength = length * -1 * 2;
       const value = this.data.toString(
         "utf16le",
