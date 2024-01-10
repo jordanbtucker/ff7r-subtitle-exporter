@@ -1,127 +1,99 @@
 import { UAsset } from "./uasset";
 import { UFile } from "./ufile";
 
+/**
+ * A line in an FF7R text file.
+ */
 export interface Line {
+  /** The ID of the line. */
   id: string;
+  /** The text of the line. */
   text: string;
+  /** A list of key-value pairs tied to the line. */
   meta: Record<string, string>;
 }
 
+/**
+ * Represents a *.uexp file.
+ */
 export class UExport extends UFile {
+  /** The number of lines in the file. */
   linesCount = 0;
+  /** The lines in the file. */
   lines: Line[] = [];
 
+  /**
+   * Opens a *.uexp file for reading, tied to a *.uasset file.
+   * @param filename The filename of the *.uexp file.
+   * @param uasset The UAsset representing the related *.uasset file.
+   */
   constructor(filename: string, public uasset: UAsset) {
     super(filename);
   }
 
-  static get PropertyType() {
-    return {
-      BOOLEAN: 1,
-      BYTE: 2,
-      BOOLEAN_BYTE: 3,
-      UINT16: 4,
-      INT32: 7,
-      FLOAT: 9,
-      STRING: 10,
-      NAME: 11,
-    };
-  }
-
-  async read() {
+  /**
+   * Reads the file data into memory.
+   */
+  async read(): Promise<void> {
     await super.read();
     this.readLines();
   }
 
-  readLines() {
+  /**
+   * Reads the lines in the file.
+   */
+  readLines(): void {
+    // Skip the first 12 bytes of the file. I don't know what they mean.
     this.pos = 0x000d;
+
+    // Read the number of lines in the file.
     this.linesCount = this.readUInt32();
     this.lines = [];
+
     for (let i = 0; i < this.linesCount; i++) {
+      // Read the ID and text of the line.
       const id = this.readFString();
       const text = this.readFString();
+
+      // Read the number of key-value meta pairs tied to the line. For most
+      // files this will be 1, but `US/Resident_TxtRes.uexp` contains meta pairs
+      // for the articles and plurals of certain nouns.
       const metaCount = this.readUInt32();
       const meta: Record<string, string> = {};
       for (let j = 0; j < metaCount; j++) {
+        // Read the type of the meta pair. For most lines this is 'ACTOR', but
+        // `US/Resident_TxtRes.uexp` contains types like 'ARTICLE', 'PLURAL',
+        // and 'SINGULAR'.
         const type = this.readFName();
         const value = this.readFString();
         meta[type] = value;
       }
+
       this.lines.push({ id, text, meta });
     }
   }
 
-  // readEntries() {
-  //   this.header = this.readBytes(0x0a);
-  //   this.entriesCount = this.readInt32();
-  //   this.propsCount = this.readInt32();
-  //   /** @type {Property[]} */
-  //   this.props = [];
-  //   for (let i = 0; i < this.propsCount; i++) {
-  //     const name = this.readFName();
-  //     const type = this.readByte();
-  //     this.props.push({ name, type });
-  //   }
-
-  //   /** @type {Entry[]} */
-  //   this.entries = [];
-  //   this.offsets = [];
-  //   for (let i = 0; i < this.entriesCount; i++) {
-  //     const entry = {} as Record<string, string | number | (string | number)[]>;
-  //     const offsetData = {} as Record<string, number>;
-  //     entry.$tag = this.readFName();
-
-  //     for (const prop of this.props) {
-  //       offsetData[prop.name] = this.pos;
-
-  //       let value;
-  //       if (prop.name.endsWith("_Array")) {
-  //         value = [];
-  //         const length = this.readInt32();
-  //         for (let j = 0; j < length; j++) {
-  //           value.push(this.readPropValue(prop));
-  //         }
-  //       } else {
-  //         value = this.readPropValue(prop);
-  //       }
-
-  //       entry[prop.name] = value;
-  //     }
-
-  //     this.entries.push(entry);
-  //     this.offsets.push(offsetData);
-  //   }
-  // }
-
-  // /**
-  //  * @param {Property} prop
-  //  */
-  // readPropValue(prop: Property) {
-  //   const { name, type } = prop;
-  //   switch (type) {
-  //     case UExport.PropertyType.BOOLEAN:
-  //       return name.endsWith("_Array") ? this.readByte() : this.readInt32();
-  //     case UExport.PropertyType.BYTE:
-  //     case UExport.PropertyType.BOOLEAN_BYTE:
-  //       return this.readByte();
-  //     case UExport.PropertyType.UINT16:
-  //       return this.readInt16();
-  //     case UExport.PropertyType.INT32:
-  //       return this.readInt32();
-  //     case UExport.PropertyType.FLOAT:
-  //       return this.readFloat();
-  //     case UExport.PropertyType.STRING:
-  //       return this.readFString();
-  //     case UExport.PropertyType.NAME:
-  //       return this.readFName();
-  //     default:
-  //       throw new Error(`Unknown property type ${type}`);
-  //   }
-  // }
-
-  readFName() {
+  /**
+   * Reads a name at the current position.
+   * @returns The name at the current position.
+   */
+  readFName(): string {
+    // An FName is a string built from an index into the related *.uasset file
+    // and an instance number. A *.uasset file has a list of "names", and the
+    // FName's zero-based index points to a name in that list. If the FName has
+    // a non-zero instance number, then the instance number is decremented by
+    // one, preceeded by an underscore, and appended to the name. Otherwise the
+    // name is returned as-is. For example, if a *.uasset has the list of names
+    // ["Foo", "Bar"], and the FName has an index of 1 and an instance number of
+    // 2, then the string "Bar_1" is returned. If the FName has an index of 0
+    // and an instance number of 0, then "Foo" is returned.
     const index = this.readInt32();
-    this.readBytes(4);
-    return this.uasset.names[index];
+    const instance = this.readInt32();
+    const name = this.uasset.names[index];
+    if (instance > 0) {
+      return `${name}_${instance - 1}`;
+    } else {
+      return name;
+    }
   }
 }
