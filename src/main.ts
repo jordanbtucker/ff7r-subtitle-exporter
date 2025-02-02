@@ -1,5 +1,5 @@
 import { appendFile, readdir, writeFile } from "fs/promises";
-import { UPackage } from "./upackage";
+import { UAsset } from "./uasset";
 
 /**
  * Processes the Unreal Engine files and outputs a CSV file for each region.
@@ -11,7 +11,7 @@ async function run(): Promise<void> {
   // Fail fast on no region directories found.
   if (regions.length === 0) {
     console.log(
-      "No region folders found. Make sure at least one region folder is in the `data` folder. See README.md for details."
+      "No region folders found. Make sure at least one region folder is in the `data` folder. See README.md for details.",
     );
     process.exitCode = 1;
     return;
@@ -22,7 +22,7 @@ async function run(): Promise<void> {
 
     // Get all *.uasset files in the current region directory.
     const names = (await readdir(`data/${region}`)).filter((name) =>
-      name.endsWith(".uasset")
+      name.endsWith(".uasset"),
     );
 
     // Write the header for the CSV file.
@@ -30,10 +30,10 @@ async function run(): Promise<void> {
 
     for (const name of names) {
       // Read each *.uasset/*.uexp file in the region directory.
-      const pkg = new UPackage(`data/${region}/${name}`);
-      await pkg.read();
+      const uasset = new UAsset(`data/${region}/${name}`);
+      uasset.read();
 
-      for (const { id, text, meta } of pkg.uexp.lines) {
+      for (const { id, text, meta } of uasset.lines) {
         // Each "line" in a *.uexp file has an ID, text, and a list of key-value
         // meta pairs. The ACTOR meta pair is the name of the speaker.
         const speaker = meta["ACTOR"];
@@ -44,8 +44,8 @@ async function run(): Promise<void> {
           await appendFile(
             `out/${region}.csv`,
             `${escapeCSVField(id)},${escapeCSVField(speaker)},${escapeCSVField(
-              text
-            )}\n`
+              text,
+            )}\n`,
           );
         }
       }

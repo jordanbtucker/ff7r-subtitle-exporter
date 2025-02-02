@@ -8,8 +8,12 @@
       "type": "node",
       "request": "launch",
       "name": "Launch Program",
-      "skipFiles": ["<node_internals>/**"],
-      "program": "${workspaceFolder}/lib/index.js"
+      "runtimeExecutable": "tsx",
+      "skipFiles": [
+        "<node_internals>/**",
+        "${workspaceFolder}/node_modules/**"
+      ],
+      "program": "${workspaceFolder}/src/main.ts"
     }
   ]
 }

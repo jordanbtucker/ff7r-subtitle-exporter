@@ -1,221 +1,130 @@
+import { FName } from "./fname";
 import { UFile } from "./ufile";
 
-/** A tag that all FF7R *.uasset files start with. */
-const VALID_TAG = 0x9e2a83c1;
-
 /**
- * Represents a *.uasset file.
+ * A line in an FF7R text file.
  */
-export class UAsset extends UFile {
-  tag = 0;
-  version = 0;
-  legacyVersion = 0;
-  ue3Version = 0;
-  licenseeVersion = 0;
-  fileVersion = 0;
-  customVersionsCount = 0;
-  headersSize = 0;
-  packageGroup = "";
-  packageFlags = 0;
-  namesCount = 0;
-  namesOffset = 0;
-  gatherableTextDataCount = 0;
-  gatherableTextDataOffset = 0;
-  exportsCount = 0;
-  exportsOffset = 0;
-  names: string[] = [];
-  exports: ExportDefinition[] = [];
-
-  /**
-   * Reads the file data into memory.
-   */
-  async read(): Promise<void> {
-    await super.read();
-    this.readHeader();
-    this.readNames();
-    this.readExports();
-  }
-
-  /**
-   * Reads the header information into memory.
-   */
-  readHeader(): void {
-    // Assert that this is a valid Unreal Engine file.
-    this.tag = this.readUInt32();
-    if (this.tag !== VALID_TAG) {
-      throw new Error(`Invalid tag ${this.tag}`);
-    }
-
-    // These version numbers aren't important for reading subtitle data, but we
-    // check them to assert that this is a valid Unreal Engine file.
-    this.version = this.readUInt32();
-    this.legacyVersion = this.version & 0xffffffff;
-
-    if (this.legacyVersion !== -4) {
-      this.ue3Version = this.readInt32();
-    }
-
-    this.version = this.readInt32();
-    this.licenseeVersion = this.readInt32() & 0xffff;
-    this.fileVersion = this.version & 0xffff;
-
-    if ((this.version & 0xffff) !== 0) {
-      throw new Error(`Invalid version ${this.version}`);
-    }
-
-    if (this.licenseeVersion !== 0) {
-      throw new Error(`Invalid licensee version ${this.licenseeVersion}`);
-    }
-
-    if (this.fileVersion !== 0) {
-      throw new Error(`Invalid file version ${this.fileVersion}`);
-    }
-
-    if (this.legacyVersion <= -2) {
-      this.customVersionsCount = this.readInt32();
-      if (this.customVersionsCount !== 0) {
-        throw new Error("Unsupported custom versions");
-      }
-    }
-
-    // More information that isn't important for reading subtitle data.
-    this.headersSize = this.readInt32();
-    this.packageGroup = this.readFString();
-    this.packageFlags = this.readInt32();
-
-    // Read the name count and position of the name list.
-    this.namesCount = this.readInt32();
-    this.namesOffset = this.readInt32();
-
-    // More information that isn't important for reading subtitle data.
-    this.gatherableTextDataCount = this.readInt32();
-    this.gatherableTextDataOffset = this.readInt32();
-
-    // Read the export count and the position of the export definitions.
-    this.exportsCount = this.readInt32();
-    this.exportsOffset = this.readInt32();
-
-    // FF7R text files should only have one export.
-    if (this.exportsCount !== 1) {
-      throw new Error(`Invalid number of exports: ${this.exportsCount}`);
-    }
-  }
-
-  /**
-   * Reads the list of names into memory.
-   */
-  readNames(): void {
-    this.pos = this.namesOffset;
-    this.names = [];
-
-    for (let i = 0; i < this.namesCount; i++) {
-      const name = this.readFString();
-      this.readBytes(4);
-      this.names.push(name);
-    }
-  }
-
-  /**
-   * Reads the export definitions into memory.
-   */
-  readExports(): void {
-    this.pos = this.exportsOffset;
-    this.exports = [];
-
-    for (let i = 0; i < this.exportsCount; i++) {
-      const definition = new ExportDefinition(this);
-      definition.read();
-      this.exports.push(definition);
-    }
-  }
-
-  /**
-   * Reads a name at the current position.
-   * @returns The name at the current position.
-   */
-  readFName(): string {
-    // An FName is a string built from an index into the related *.uasset file
-    // and an instance number. A *.uasset file has a list of "names", and the
-    // FName's zero-based index points to a name in that list. If the FName has
-    // a non-zero instance number, then the instance number is decremented by
-    // one, preceeded by an underscore, and appended to the name. Otherwise the
-    // name is returned as-is. For example, if a *.uasset has the list of names
-    // ["Foo", "Bar"], and the FName has an index of 1 and an instance number of
-    // 2, then the string "Bar_1" is returned. If the FName has an index of 0
-    // and an instance number of 0, then "Foo" is returned.
-    const index = this.readInt32();
-    const instance = this.readInt32();
-    const name = this.names[index];
-    if (instance > 0) {
-      return `${name}_${instance - 1}`;
-    } else {
-      return name;
-    }
-  }
+export interface Line {
+  /** The ID of the line. */
+  id: string;
+  /** The text of the line. */
+  text: string;
+  /** A list of key-value pairs tied to the line. */
+  meta: Record<string, string>;
 }
 
-/**
- * Represents information about an export.
- */
-export class ExportDefinition {
-  classIndex = 0;
-  superIndex = 0;
-  templateIndex = 0;
-  packageIndex = 0;
-  objectName = "";
-  objectFlags = 0;
-  serialSize = 0;
-  serialOffset = 0;
-  isForcedExport = false;
-  isNotForClient = false;
-  isNotForServer = false;
-  guid = Buffer.alloc(0);
-  packageFlags = 0;
-  isNotForEditorGame = false;
-  isAsset = false;
+interface UExportDefinition {
+  offset: number;
+  size: number;
+}
 
-  /**
-   * Constructs an export definition tied to a *.uasset file.
-   * @param uasset The *.uasset file to tie this export to.
-   */
-  constructor(public uasset: UAsset) {}
+export class UAsset extends UFile {
+  #names: string[] = [];
+  #exports: UExportDefinition[] = [];
+  #lines: Line[] = [];
+  // #dataOffset = 0;
+  // #namesByOffset: Record<number, string> = {};
 
-  /**
-   * Reads the export definition into memory.
-   */
-  read(): void {
-    // Information that isn't important for reading subtitle data.
-    this.classIndex = this.uasset.readInt32();
-    this.superIndex = this.uasset.readInt32();
-    this.templateIndex = this.uasset.readInt32();
-    this.packageIndex = this.uasset.readInt32();
-    this.objectName = this.uasset.readFName();
-    this.objectFlags = this.uasset.readUInt32();
+  constructor(filename: string) {
+    super(filename);
+  }
 
-    /** The size of the export data. */
-    const serialSize = this.uasset.readInt64();
-    /** The position of the export data. */
-    const serialOffset = this.uasset.readInt64();
+  get names() {
+    return this.#names;
+  }
 
-    // More information that isn't important for reading subtitle data.
-    this.isForcedExport = this.uasset.readBoolean();
-    this.isNotForClient = this.uasset.readBoolean();
-    this.isNotForServer = this.uasset.readBoolean();
-    this.guid = this.uasset.readBytes(16);
-    this.packageFlags = this.uasset.readInt32();
-    this.isNotForEditorGame = this.uasset.readBoolean();
-    this.isAsset = this.uasset.readBoolean();
+  get exports() {
+    return this.#exports;
+  }
 
-    // Assert that the export data size and position are not to large to handle.
-    if (serialSize > Number.MAX_SAFE_INTEGER) {
-      throw new Error(`Unsupported export size ${serialSize}`);
+  get lines() {
+    return this.#lines;
+  }
+
+  // get props() {
+  //   return this.#props;
+  // }
+
+  // get offsets() {
+  //   return this.#offsets;
+  // }
+
+  override read(): void {
+    super.read();
+
+    this.readFName(); // name
+    this.readFName(); // sourceName
+    this.readUint32(); // packageFlags
+    this.readUint32(); // cookedHeaderSize
+    const namesOffset = this.readUint32();
+    const namesSize = this.readUint32();
+    this.readUint32(); // namesHashesOffset
+    this.readUint32(); // namesHashesSize
+    this.readUint32(); // importsOffset
+    const exportsOffset = this.readUint32();
+    const exportsBundlesOffset = this.readUint32();
+    const graphDataOffset = this.readUint32();
+    const graphDataSize = this.readUint32();
+    const headerSize = graphDataOffset + graphDataSize;
+
+    this.#names = [];
+    for (this.pos = namesOffset; this.pos < namesOffset + namesSize; ) {
+      this.#names.push(this.readFString());
     }
-    if (serialOffset > Number.MAX_SAFE_INTEGER) {
-      throw new Error(`Unsupported export offset ${serialOffset}`);
+
+    this.#exports = [];
+    let offset = headerSize;
+    for (this.pos = exportsOffset; this.pos < exportsBundlesOffset; ) {
+      this.readUint64(); // cookedSerialOffset
+      const size = Number(this.readUint64());
+      this.readUint64(); // objectName (FMappedName)
+      this.readUint64(); // outerIndex
+      this.readUint64(); // classIndex
+      this.readUint64(); // superIndex
+      this.readUint64(); // templateIndex
+      this.readUint64(); // globalImportIndex
+      this.readUint32(); // objectFlags
+      this.readByte(); // filterFlags
+      this.readBytes(3); // padding
+      this.#exports.push({ offset, size });
+      offset += size;
     }
 
-    // Convert the export data size and position from bigints to numbers.
-    this.serialSize = Number(serialSize);
-    this.serialOffset = Number(serialOffset);
+    if (this.#exports.length !== 1) {
+      throw new Error(`Expected 1 export, but found ${this.#exports.length}`);
+    }
+
+    this.pos = this.#exports[0]!.offset;
+    this.pos += 0x2c;
+
+    // Read the number of lines in the file.
+    const linesCount = this.readUint32();
+    this.#lines = [];
+
+    for (let i = 0; i < linesCount; i++) {
+      // Read the ID and text of the line.
+      const id = this.readString();
+      const text = this.readString();
+
+      // Read the number of key-value meta pairs tied to the line. For most
+      // files this will be 1, but `US/Resident_TxtRes.uexp` contains meta pairs
+      // for the articles and plurals of certain nouns.
+      const metaCount = this.readUint32();
+      const meta: Record<string, string> = {};
+      for (let j = 0; j < metaCount; j++) {
+        // Read the type of the meta pair. For most lines this is 'ACTOR', but
+        // `US/Resident_TxtRes.uexp` contains types like 'ARTICLE', 'PLURAL',
+        // and 'SINGULAR'.
+        const type = this.readFName();
+        const value = this.readString();
+        meta[type] = value;
+      }
+
+      this.lines.push({ id, text, meta });
+    }
+  }
+
+  readFName() {
+    return new FName(this, this.readUint32(), this.readUint32()).toString();
   }
 }

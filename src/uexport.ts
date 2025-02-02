@@ -27,15 +27,18 @@ export class UExport extends UFile {
    * @param filename The filename of the *.uexp file.
    * @param uasset The UAsset representing the related *.uasset file.
    */
-  constructor(filename: string, public uasset: UAsset) {
+  constructor(
+    filename: string,
+    public uasset: UAsset,
+  ) {
     super(filename);
   }
 
   /**
    * Reads the file data into memory.
    */
-  async read(): Promise<void> {
-    await super.read();
+  override read(): void {
+    super.read();
     this.readLines();
   }
 
@@ -47,7 +50,7 @@ export class UExport extends UFile {
     this.pos = 0x000d;
 
     // Read the number of lines in the file.
-    this.linesCount = this.readUInt32();
+    this.linesCount = this.readUint32();
     this.lines = [];
 
     for (let i = 0; i < this.linesCount; i++) {
@@ -58,7 +61,7 @@ export class UExport extends UFile {
       // Read the number of key-value meta pairs tied to the line. For most
       // files this will be 1, but `US/Resident_TxtRes.uexp` contains meta pairs
       // for the articles and plurals of certain nouns.
-      const metaCount = this.readUInt32();
+      const metaCount = this.readUint32();
       const meta: Record<string, string> = {};
       for (let j = 0; j < metaCount; j++) {
         // Read the type of the meta pair. For most lines this is 'ACTOR', but
@@ -89,7 +92,7 @@ export class UExport extends UFile {
     // and an instance number of 0, then "Foo" is returned.
     const index = this.readInt32();
     const instance = this.readInt32();
-    const name = this.uasset.names[index];
+    const name = this.uasset.names[index]!;
     if (instance > 0) {
       return `${name}_${instance - 1}`;
     } else {

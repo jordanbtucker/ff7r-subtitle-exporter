@@ -29,7 +29,7 @@ export class UPackage {
       this.uassetFilename = filename.replace(/.uexp$/i, ".uasset");
     } else {
       throw new Error(
-        `Filename must end with .uasset or .uexp but got ${filename}`
+        `Filename must end with .uasset or .uexp but got ${filename}`,
       );
     }
   }

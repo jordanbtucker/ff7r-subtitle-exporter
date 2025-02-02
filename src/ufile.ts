@@ -1,137 +1,173 @@
-import { readFile } from "node:fs/promises";
+import { readFileSync, writeFileSync } from "fs";
 
-/**
- * A base class for reading an Unreal Engine file.
- */
 export class UFile {
-  /** The file data. */
-  data = Buffer.alloc(0);
-  /** The current position to begin reading. */
-  pos = 0;
+  #filename: string;
+  #data: Buffer<ArrayBufferLike>;
+  #pos = 0;
 
-  /**
-   * Opens an Unreal Engine file for reading.
-   * @param filename The filename of the file to read.
-   */
-  constructor(public filename: string) {}
-
-  /**
-   * Reads the file data into memory and resets the position.
-   */
-  async read(): Promise<void> {
-    this.data = await readFile(this.filename);
-    this.pos = 0;
+  constructor(filename: string) {
+    this.#filename = filename;
+    this.#data = readFileSync(filename);
   }
 
-  /**
-   * Reads a Boolean value at the current position.
-   * @returns The Boolean value at the current position.
-   */
-  readBoolean(): boolean {
-    return this.readByte() !== 0;
+  get filename() {
+    return this.#filename;
   }
 
-  /**
-   * Reads a byte at the current position.
-   * @returns The byte at the current position.
-   */
-  readByte(): number {
-    if (this.pos >= this.data.byteLength) {
-      throw new Error("Attempt to read past the end of the buffer");
+  get data() {
+    return this.#data;
+  }
+
+  get pos() {
+    return this.#pos;
+  }
+
+  protected set pos(value: number) {
+    this.#pos = value;
+  }
+
+  read() {
+    this.#pos = 0;
+  }
+
+  readBytes(length: number) {
+    const value = this.#data.subarray(this.#pos, this.#pos + length);
+    this.#pos += length;
+    return value;
+  }
+
+  readByte() {
+    const value = this.#data.readUint8(this.#pos);
+    this.#pos++;
+    return value;
+  }
+
+  readUint16() {
+    const value = this.#data.readUint16LE(this.#pos);
+    this.#pos += 2;
+    return value;
+  }
+
+  readInt16() {
+    const value = this.#data.readInt16LE(this.#pos);
+    this.#pos += 2;
+    return value;
+  }
+
+  readUint32() {
+    const value = this.#data.readUint32LE(this.#pos);
+    this.#pos += 4;
+    return value;
+  }
+
+  readInt32() {
+    const value = this.#data.readInt32LE(this.#pos);
+    this.#pos += 4;
+    return value;
+  }
+
+  readUint64() {
+    const value = this.#data.readBigUint64LE(this.#pos);
+    this.#pos += 8;
+    return value;
+  }
+
+  readInt64() {
+    const value = this.#data.readBigInt64LE(this.#pos);
+    this.#pos += 8;
+    return value;
+  }
+
+  readFloat() {
+    const value = this.#data.readFloatLE(this.#pos);
+    this.#pos += 4;
+    return value;
+  }
+
+  readFString() {
+    const b1 = this.readByte();
+    const b2 = this.readByte();
+    const isUTF16LE = (b1 & 0x80) !== 0;
+    const length = ((b1 & 0x7f) << 8) | b2;
+    let value;
+    if (isUTF16LE) {
+      this.align(2);
+      const utf16LELength = length * 2;
+      value = this.#data.toString(
+        "utf-16le",
+        this.#pos,
+        this.#pos + utf16LELength,
+      );
+      this.#pos += utf16LELength;
+    } else {
+      value = this.#data.toString("utf-8", this.#pos, this.#pos + length);
+      this.#pos += length;
     }
-    return this.data[this.pos++];
+    return value.replace(/\0$/, "");
   }
 
-  /**
-   * Reads an array of bytes at the current position.
-   * @param n The number of bytes to read.
-   * @returns The array of bytes at the current position.
-   */
-  readBytes(n: number): Buffer {
-    const value = this.data.subarray(this.pos, this.pos + n);
-    this.pos += n;
-    return value;
-  }
-
-  /**
-   * Reads a 16-bit signed integer at the current position.
-   * @returns The 16-bit signed integer at the current position.
-   */
-  readInt16(): number {
-    const value = this.data.readInt16LE(this.pos);
-    this.pos += 2;
-    return value;
-  }
-
-  /**
-   * Reads a 32-bit signed integer at the current position.
-   * @returns The 32-bit signed integer at the current position.
-   */
-  readInt32(): number {
-    const value = this.data.readInt32LE(this.pos);
-    this.pos += 4;
-    return value;
-  }
-
-  /**
-   * Reads a 64-bit signed integer at the current position.
-   * @returns The 64-bit signed integer at the current position.
-   */
-  readInt64(): bigint {
-    const value = this.data.readBigInt64LE(this.pos);
-    this.pos += 8;
-    return value;
-  }
-
-  /**
-   * Reads a 32-bit unsigned integer at the current position.
-   * @returns The 32-bit unsigned integer at the current position.
-   */
-  readUInt32(): number {
-    const value = this.data.readUInt32LE(this.pos);
-    this.pos += 4;
-    return value;
-  }
-
-  /**
-   * Reads a 32-bit floating point number at the current position.
-   * @returns The 32-bit floating point number at the current position.
-   */
-  readFloat(): number {
-    const value = this.data.readFloatLE(this.pos);
-    this.pos += 4;
-    return value;
-  }
-
-  /**
-   * Reads a string at the current position.
-   * @returns The string at the current position.
-   */
-  readFString(): string {
-    // The length is the number of characters in the string, including the
-    // closing NULL character.
+  readString() {
     const length = this.readInt32();
     if (length === 0) {
-      // Empty strings have a length of zero and no NULL character.
       return "";
-    } else if (length > 0) {
-      // A positive length means the string is encoded as ASCII, and the
-      // character length equals the number of bytes.
-      const value = this.data.toString("utf8", this.pos, this.pos + length);
-      this.pos += length;
-      return value.replace(/\0$/, "");
-    } else {
-      // A negative length means the string is encoded as UTF-16 LE and the
-      // absolute value of the length is the number of UTF-16 characters, which
-      // is half of the byte length.
-      const byteLength = length * -1 * 2;
-      const value = this.data.toString(
-        "utf16le",
-        this.pos,
-        this.pos + byteLength
-      );
-      this.pos += byteLength;
-      return value.replace(/\0$/, "");
     }
+
+    const isUTF16LE = length < 0;
+    let value;
+    if (isUTF16LE) {
+      const utf16LELength = length * -1 * 2;
+      value = this.#data.toString(
+        "utf-16le",
+        this.#pos,
+        this.#pos + utf16LELength,
+      );
+      this.#pos += utf16LELength;
+    } else {
+      value = this.#data.toString("utf-8", this.#pos, this.#pos + length);
+      this.#pos += length;
+    }
+    return value.replace(/\0$/, "");
+  }
+
+  align(alignment: number) {
+    this.#pos = (this.#pos + alignment - 1) & ~(alignment - 1);
+  }
+
+  write(filename = this.#filename) {
+    writeFileSync(filename, this.#data);
+  }
+
+  writeByte(value: number) {
+    this.#data.writeInt8(value, this.#pos++);
+  }
+
+  writeUint16(value: number) {
+    this.#data.writeUint16LE(value, this.#pos);
+    this.#pos += 2;
+  }
+
+  writeInt16(value: number) {
+    this.#data.writeInt16LE(value, this.#pos);
+    this.#pos += 2;
+  }
+
+  writeUint32(value: number) {
+    this.#data.writeUint32LE(value, this.#pos);
+    this.#pos += 4;
+  }
+
+  writeInt32(value: number) {
+    this.#data.writeInt32LE(value, this.#pos);
+    this.#pos += 4;
+  }
+
+  writeInt64(value: bigint) {
+    this.#data.writeBigInt64LE(value, this.#pos);
+    this.#pos += 8;
+  }
+
+  writeFloat(value: number) {
+    this.#data.writeFloatLE(value, this.#pos);
+    this.#pos += 4;
   }
 }

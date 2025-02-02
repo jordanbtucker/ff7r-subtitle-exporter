@@ -1,10 +1,40 @@
 {
-  "extends": "@tsconfig/node20/tsconfig.json",
   "compilerOptions": {
-    "declaration": true,
-    "declarationMap": true,
-    "outDir": "lib",
-    "sourceMap": true
-  },
-  "include": ["src"]
+    "allowJs": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2023",
+    "verbatimModuleSyntax": true,
+
+    /* If using JSX: */
+    "jsx": "react-jsx",
+
+    /* If your code doesn't run in the DOM: */
+    "lib": ["es2023"],
+
+    /* If your code runs in the DOM: */
+    // "lib": ["es2023", "dom", "dom.iterable"],
+
+    /* If NOT transpiling with TypeScript: */
+    "module": "preserve",
+    "noEmit": true
+
+    /* If transpiling with TypeScript: */
+    // "module": "NodeNext",
+    // "outDir": "dist",
+    // "sourceMap": true,
+
+    /* AND if you're building for a library: */
+    // "declaration": true,
+
+    /* AND if you're building for a library in a monorepo: */
+    // "composite": true,
+    // "declarationMap": true,
+  }
 }
