@@ -38,12 +38,12 @@ async function run(): Promise<void> {
         // meta pairs. The ACTOR meta pair is the name of the speaker.
         const speaker = meta["ACTOR"];
 
-        // Skip any lines that do not have a speaker or do not have any text.
-        if (speaker != null && speaker !== "" && text !== "") {
+        // Skip lines that do not have any text.
+        if (text !== "") {
           // Write each line to the CSV file.
           await appendFile(
             `out/${region}.csv`,
-            `${escapeCSVField(id)},${escapeCSVField(speaker)},${escapeCSVField(
+            `${escapeCSVField(id)},${escapeCSVField(speaker ?? "")},${escapeCSVField(
               text,
             )}\n`,
           );
